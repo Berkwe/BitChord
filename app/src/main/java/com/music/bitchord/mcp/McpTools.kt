@@ -44,6 +44,15 @@ object McpTools {
     private data class Tool(val name: String, val permission: String, val description: String,
                             val fields: Map<String, String> = emptyMap(), val required: List<String> = emptyList())
     private val tools = listOf(
+        Tool("recommendations", "recommendations", "Get recommendation candidates without changing playback; optional seed video_id; limit 1..50", mapOf("video_id" to "string", "limit" to "integer"), emptyList()),
+        Tool("listening_summary", "stats", "Device listening totals: period this_week, this_month, this_year or all_time; limit 1..50", mapOf("period" to "string", "limit" to "integer"), listOf("period")),
+        Tool("sleep_timer_get", "sleep_timer", "Read sleep timer state", emptyMap(), emptyList()),
+        Tool("sleep_timer_set", "sleep_timer", "Set minutes 1..720 OR after_track=true, exclusively", mapOf("minutes" to "integer", "after_track" to "boolean"), emptyList()),
+        Tool("sleep_timer_cancel", "sleep_timer", "Cancel sleep timer", emptyMap(), emptyList()),
+        Tool("downloads_list", "downloads_read", "List download states, limit 1..50; no paths", mapOf("limit" to "integer"), emptyList()),
+        Tool("download_status", "downloads_read", "Read actual download state", mapOf("video_id" to "string"), listOf("video_id")),
+        Tool("download_enqueue", "downloads_write", "Request download; acceptance is not completion", mapOf("video_id" to "string"), listOf("video_id")),
+        Tool("download_cancel", "downloads_write", "Cancel a download without deleting saved files", mapOf("video_id" to "string"), listOf("video_id")),
         Tool("track_details", "metadata", "Select fields: video_id,title,artist,album,duration,artist_id,artists,album_id,explicit,is_video,source,genres,year,release_date,views,likes,comments,analysis,lyrics,track_number,radio_name,queue_tier,queue_entry_id,playback_source,playback_source_id,download_format. Only requested expensive fields are fetched; analysis reads existing results.", mapOf("video_id" to "string", "fields" to "string_array"), listOf("video_id", "fields")),
         Tool("search_filtered", "search", "Search max40 candidates/max20 results. criteria: artist,title,album,explicit,is_video,duration_min,duration_max (seconds),genre,year. Video category uses API; other criteria filter locally. Unknowns excluded. Requires metadata permission.", mapOf("query" to "string", "criteria" to "object", "fields" to "string_array", "limit" to "integer"), listOf("query")),
         Tool("skip_next", "playback", "Skip to the next queue item"),
@@ -143,6 +152,7 @@ object McpTools {
             withTimeout(20_000) {
                 withContext(Dispatchers.IO) {
                     when (name) {
+                        "recommendations", "listening_summary", "sleep_timer_get", "sleep_timer_set", "sleep_timer_cancel", "downloads_list", "download_status", "download_enqueue", "download_cancel" -> McpUtilities.call(context, name, args)
                         "track_details" -> McpMetadata.details(context, args.text("video_id", 11), (args["fields"] as JsonArray).map { it.jsonPrimitive.content })
                         "search_filtered" -> {
                             checkPermission("metadata")
