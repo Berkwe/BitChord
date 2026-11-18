@@ -180,6 +180,8 @@ fun McpSettingsPanel() {
                         "sleep_timer" -> R.string.mcp_sleep_timer
                         "downloads_read" -> R.string.mcp_downloads_read
                         "downloads_write" -> R.string.mcp_downloads_write
+                        "playlist_delete" -> R.string.mcp_playlist_delete
+                        "downloads_delete" -> R.string.mcp_downloads_delete
                         else -> R.string.mcp_playlist_write
                     }
                     McpToggle(stringResource(label), permissions[permission] == true) {

@@ -1495,4 +1495,7 @@
 
     <!-- MCP additions: English fallback until localized. -->
     <string name="mcp_title" translatable="false">MCP</string>
+
+    <string name="mcp_playlist_delete">Hesap çalma listelerini sil</string>
+    <string name="mcp_downloads_delete">İndirilen kopyaları sil</string>
 </resources>

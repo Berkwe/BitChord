@@ -115,18 +115,23 @@ object McpMetadata {
         if (n.drop(1).any { it >= 60 }) return null
         return n.fold(0L) { a, b -> a * 60 + b }
     }
-    private val criteriaKeys = setOf("artist", "title", "album", "explicit", "is_video", "duration_min", "duration_max", "genre", "year")
+    private val criteriaKeys = setOf("artist", "title", "album", "explicit", "is_video", "duration_min", "duration_max", "genre", "year", "year_min", "year_max", "include_artists", "exclude_artists", "include_genres", "exclude_genres")
     internal fun validateCriteria(c: JsonObject) {
         require(c.keys.all { it in criteriaKeys }) { "Unsupported criteria: ${c.keys - criteriaKeys}" }
         c.forEach { (k, v) ->
-            val p = v as? JsonPrimitive ?: error("Invalid criterion: $k")
+            if (k in setOf("include_artists", "exclude_artists", "include_genres", "exclude_genres")) {
+                require(v is JsonArray && v.size in 1..20 && v.all { it is JsonPrimitive && it.isString && it.content.isNotBlank() && it.content.length <= 256 }) { "Invalid criterion: $k" }
+                return@forEach
+            }
+            val p = v as? JsonPrimitive ?: throw IllegalArgumentException("Invalid criterion: $k")
             require(when (k) {
                 "explicit", "is_video" -> !p.isString && p.booleanOrNull != null
                 "duration_min", "duration_max" -> !p.isString && p.longOrNull?.let { it in 0..86400 } == true
-                "year" -> !p.isString && p.intOrNull?.let { it in 1000..2999 } == true
+                "year", "year_min", "year_max" -> !p.isString && p.intOrNull?.let { it in 1000..2999 } == true
                 else -> p.isString && p.content.isNotBlank() && p.content.length <= 256
             }) { "Invalid criterion: $k" }
         }
+        require((c["year_min"]?.jsonPrimitive?.intOrNull ?: 1000) <= (c["year_max"]?.jsonPrimitive?.intOrNull ?: 2999)) { "Invalid year range" }
         require((c["duration_min"]?.jsonPrimitive?.longOrNull ?: 0) <= (c["duration_max"]?.jsonPrimitive?.longOrNull ?: 86400)) { "Invalid duration range" }
     }
     /** null is unknown, not a match. Called by production and unit tests. */
@@ -140,7 +145,18 @@ object McpMetadata {
         "duration_max" -> duration(song.durationText)?.let { it <= value.long }
         "genre" -> ArtistFacts.genresFor(song.artist).takeIf { it.isNotEmpty() }?.any { it.equals(value.content, true) }
         "year" -> year?.toIntOrNull()?.let { it == value.int }
+        "year_min" -> year?.toIntOrNull()?.let { it >= value.int }
+        "year_max" -> year?.toIntOrNull()?.let { it <= value.int }
         else -> null
+    }
+    internal fun matchCriterion(song: Song, key: String, value: JsonElement, year: String? = null): Boolean? {
+        if (value !is JsonArray) return match(song, key, value.jsonPrimitive, year)
+        val genres = key.endsWith("genres")
+        val names = if (genres) ArtistFacts.genresFor(song.artist) else
+            (song.artists.map { it.name } + song.artist).filter { it.isNotBlank() }
+        if (names.isEmpty()) return null
+        val hit = value.any { v -> names.any { it.equals(v.jsonPrimitive.content, true) } }
+        return if (key.startsWith("exclude_")) !hit else hit
     }
     suspend fun search(context: Context, args: JsonObject): JsonObject =
         withTimeoutOrNull(11_000) { searchWithinBudget(context, args) } ?: buildJsonObject {
@@ -166,13 +182,13 @@ object McpMetadata {
         for (song in candidates) {
             currentCoroutineContext().ensureActive()
             // Cheap predicates first; only ten surviving candidates may request year metadata.
-            val cheap = criteria.filterKeys { it != "year" }.mapValues { (k, v) -> match(song, k, v.jsonPrimitive) }
+            val cheap = criteria.filterKeys { it !in setOf("year", "year_min", "year_max") }.mapValues { (k, v) -> matchCriterion(song, k, v) }
             cheap.filterValues { it == null }.keys.forEach { unknown[it] = (unknown[it] ?: 0) + 1 }
             if (cheap.values.any { it != true }) continue
-            if ("year" in criteria) {
+            if (criteria.keys.any { it in setOf("year", "year_min", "year_max") }) {
                 val year = if (enriched < 10) { enriched++; withTimeoutOrNull(1_000) { info(song).releaseYear } } else null
-                val m = match(song, "year", criteria.getValue("year").jsonPrimitive, year)
-                if (m == null) unknown["year"] = (unknown["year"] ?: 0) + 1
+                val m = criteria.filterKeys { it in setOf("year", "year_min", "year_max") }.all { (k, v) -> matchCriterion(song, k, v, year) == true }
+                if (year == null) unknown["year"] = (unknown["year"] ?: 0) + 1
                 if (m != true) continue
             }
             matches += song

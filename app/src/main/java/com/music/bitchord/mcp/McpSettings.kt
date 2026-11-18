@@ -9,7 +9,7 @@ import java.security.SecureRandom
 object McpSettings {
     private lateinit var prefs: SharedPreferences
     /** "Edit playlists" is the switch that lets MCP add to and remove from any allowed playlist. */
-    val permissions = listOf("now_playing", "history", "queue", "playback", "seek", "search", "playlist_read", "playlist_create", "playlist_write", "queue_write", "likes_read", "likes_write", "metadata", "recommendations", "stats", "sleep_timer", "downloads_read", "downloads_write")
+    val permissions = listOf("now_playing", "history", "queue", "playback", "seek", "search", "playlist_read", "playlist_create", "playlist_write", "queue_write", "likes_read", "likes_write", "metadata", "recommendations", "stats", "sleep_timer", "downloads_read", "downloads_write", "playlist_delete", "downloads_delete")
     @Volatile var onChanged: (() -> Unit)? = null
     val port: Int = 8765
 

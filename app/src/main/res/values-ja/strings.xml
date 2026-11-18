@@ -1521,4 +1521,7 @@
     <string name="mcp_sleep_timer">Control sleep timer</string>
     <string name="mcp_downloads_read">Read downloads</string>
     <string name="mcp_downloads_write">Start downloads</string>
+
+    <string name="mcp_playlist_delete">Delete account playlists</string>
+    <string name="mcp_downloads_delete">Delete offline copies</string>
 </resources>

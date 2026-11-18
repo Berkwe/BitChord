@@ -9,7 +9,7 @@ internal fun validateToolArguments(args: JsonObject, fields: Map<String, String>
     args.forEach { (key, value) ->
         if (fields[key] == "string_array") {
             val list = value as? JsonArray ?: throw IllegalArgumentException("$key must be an array")
-            require(list.size <= 24 && list.all { it is JsonPrimitive && it.isString && it.content.length in 1..80 }) { "Invalid $key" }
+            require(list.size <= (if (key == "fields") 24 else 50) && list.all { it is JsonPrimitive && it.isString && it.content.length in 1..200 }) { "Invalid $key" }
             return@forEach
         }
         if (fields[key] == "object") {
@@ -21,7 +21,7 @@ internal fun validateToolArguments(args: JsonObject, fields: Map<String, String>
             "boolean" -> require(!p.isString && p.booleanOrNull != null) { "$key must be a boolean" }
             "string" -> {
                 require(p.isString) { "$key must be a string" }
-                val max = when (key) { "query" -> 300; "video_id" -> 11; else -> 200 }
+                val max = when (key) { "query" -> 300; "video_id" -> 11; "cursor" -> 4096; else -> 200 }
                 require(p.content.trim().length in 1..max) { "Invalid $key length" }
                 if (key == "video_id") require(Regex("[A-Za-z0-9_-]{11}").matches(p.content.trim())) {
                     "Expected an 11-character YouTube video ID"

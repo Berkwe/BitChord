@@ -48,3 +48,10 @@ Modlar: `playback_modes`, `shuffle_set(enabled)`, `repeat_set(mode="off"|"one"|"
 - `downloads_list`, `download_status`, `download_enqueue`, `download_cancel`; istek kabulü tamamlanma değildir, iptal silme değildir. Silme aracı varsayma.
 
 Kullanıcı istemeden beğeni/indirme/playlist/kuyruk değişikliği yapma. Gerçek araç sonucunu kısa ve kullanıcı dilinde bildir; başarısız/eksik işlemi tamamlandı gösterme.
+
+## Hesap playlisti ve çevrimdışı yönetim (yeni sürüm)
+`playlist_create` artık yalnız aktif hesapta oluşturur, varsayılan private; cihaz-yerel fallback yok. Eski yerel listeler korunur. Başarıdaki created_id hesabı/profili kapsar.
+`playlist_rename`, `playlist_batch_add(video_ids)`, `playlist_batch_remove(entry_ids)`, `playlist_reorder(entry_id,before_entry_id?)` hesapta sahip olunan izinli listelere uygulanır. Diziler en fazla50; reorder en fazla50 öğeli listelerde desteklenir. Timeout sonrası sonuç belirsiz olabilir, yeniden okumadan mutasyonu tekrarlama. `playlist_delete` ayrı izin ve açık kullanıcı isteği gerektirir.
+`catalog_search(query,type,criteria?,fields?,limit?,cursor?)`: type song/album/artist/playlist. Şarkıda year_min/max ve include/exclude_artists/genres kriterleri de vardır. Diğer türlerde song kriterlerini gönderme. Cursor bounded snapshot'tır; tam katalog taraması değildir. `catalog_read` playlist izinlerini aşmaz; playlist için normal izinli read araçlarını kullan.
+`playlist_download`, `playlist_download_status`, `playlist_download_cancel`, `playlist_download_delete`: playlist_id ile; en fazla200 parça. Download eksikleri tamamlar; otomatik sürekli senkronizasyon değildir. `download_delete` tek parçanın offline kopyasını siler. Shared koleksiyon dosyaları korunur. Offline silme hesap playlisti silmez. Silme ayrı izin gerektirir.
+Hatalarda güvenli code/message okunur; wifi_required için kör tekrar yapma. Bilinmeyen nedeni tahmin etme.

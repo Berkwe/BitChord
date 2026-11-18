@@ -44,6 +44,18 @@ object McpTools {
     private data class Tool(val name: String, val permission: String, val description: String,
                             val fields: Map<String, String> = emptyMap(), val required: List<String> = emptyList())
     private val tools = listOf(
+        Tool("catalog_search", "search", "Search songs, albums, artists or playlists with bounded results. Song criteria support year ranges and include/exclude artists/genres; metadata permission required for songs.", mapOf("query" to "string", "type" to "string", "criteria" to "object", "fields" to "string_array", "limit" to "integer", "cursor" to "string"), listOf("query", "type")),
+        Tool("catalog_read", "search", "Read song details, first-page album tracks or artist songs. Playlist reads must use authorized playlist tools.", mapOf("type" to "string", "id" to "string", "fields" to "string_array", "limit" to "integer", "offset" to "integer"), listOf("type", "id")),
+        Tool("playlist_rename", "playlist_write", "playlist rename", mapOf("playlist_id" to "string", "title" to "string"), listOf("playlist_id", "title")),
+        Tool("playlist_delete", "playlist_delete", "Delete an owned account playlist permanently; explicit user request required.", mapOf("playlist_id" to "string"), listOf("playlist_id")),
+        Tool("playlist_batch_add", "playlist_write", "playlist batch add", mapOf("playlist_id" to "string", "video_ids" to "string_array"), listOf("playlist_id", "video_ids")),
+        Tool("playlist_batch_remove", "playlist_write", "playlist batch remove", mapOf("playlist_id" to "string", "entry_ids" to "string_array"), listOf("playlist_id", "entry_ids")),
+        Tool("playlist_reorder", "playlist_write", "playlist reorder", mapOf("playlist_id" to "string", "entry_id" to "string", "before_entry_id" to "string"), listOf("playlist_id", "entry_id")),
+        Tool("download_delete", "downloads_delete", "download delete", mapOf("video_id" to "string"), listOf("video_id")),
+        Tool("playlist_download", "downloads_write", "Download permitted playlist offline, idempotently filling missing tracks; max200.", mapOf("playlist_id" to "string"), listOf("playlist_id")),
+        Tool("playlist_download_status", "downloads_read", "playlist download status", mapOf("playlist_id" to "string"), listOf("playlist_id")),
+        Tool("playlist_download_cancel", "downloads_write", "playlist download cancel", mapOf("playlist_id" to "string"), listOf("playlist_id")),
+        Tool("playlist_download_delete", "downloads_delete", "Remove offline collection and unshared files only, never the account playlist.", mapOf("playlist_id" to "string"), listOf("playlist_id")),
         Tool("recommendations", "recommendations", "Get recommendation candidates without changing playback; optional seed video_id; limit 1..50", mapOf("video_id" to "string", "limit" to "integer"), emptyList()),
         Tool("listening_summary", "stats", "Device listening totals: period this_week, this_month, this_year or all_time; limit 1..50", mapOf("period" to "string", "limit" to "integer"), listOf("period")),
         Tool("sleep_timer_get", "sleep_timer", "Read sleep timer state", emptyMap(), emptyList()),
@@ -78,10 +90,13 @@ object McpTools {
         Tool("playlist_list", "playlist_read", "List allowed local and current-account YouTube playlists"),
         Tool("playlist_read", "playlist_read", "Read an allowed local or account-scoped YouTube playlist", mapOf("playlist_id" to "string", "offset" to "integer", "limit" to "integer"), listOf("playlist_id")),
         Tool("playlist_entries", "playlist_read", "List an allowed playlist with its entry ids; a remove needs the entry id", mapOf("playlist_id" to "string", "offset" to "integer", "limit" to "integer"), listOf("playlist_id")),
-        Tool("playlist_create", "playlist_create", "Create an empty local playlist and automatically grant playlist access; global read/write permissions still apply", mapOf("title" to "string"), listOf("title")),
+        Tool("playlist_create", "playlist_create", "Create an account playlist; default privacy private; never creates device-local playlists", mapOf("title" to "string", "privacy" to "string"), listOf("title")),
         Tool("playlist_add", "playlist_write", "Append a catalogue track to an allowed editable playlist; video_id is a YouTube video ID", mapOf("playlist_id" to "string", "video_id" to "string"), listOf("playlist_id", "video_id")),
         Tool("playlist_remove", "playlist_write", "Remove one occurrence of an allowed editable playlist: entry_id for account playlists, index for local ones", mapOf("playlist_id" to "string", "index" to "integer", "entry_id" to "string"), listOf("playlist_id")),
     )
+
+    internal fun registeredNames(): Set<String> = tools.map { it.name }.toSet()
+    internal fun registeredPermissions(): Set<String> = tools.map { it.permission }.toSet()
 
     fun listTools(context: Context): JsonArray = buildJsonArray {
         tools.filter { McpSettings.allowed(it.permission) }.forEach { tool ->
@@ -92,7 +107,7 @@ object McpTools {
                     put("type", "object")
                     put("additionalProperties", false)
                     putJsonObject("properties") {
-                        tool.fields.forEach { (name, type) -> putJsonObject(name) { if (type == "string_array") { put("type", "array"); putJsonObject("items") { put("type", "string") }; put("maxItems", 24) }
+                        tool.fields.forEach { (name, type) -> putJsonObject(name) { if (type == "string_array") { put("type", "array"); putJsonObject("items") { put("type", "string") }; put("maxItems", if (name == "fields") 24 else 50) }
                             else put("type", type) } }
                     }
                     put("required", JsonArray(tool.required.map(::JsonPrimitive)))
@@ -109,7 +124,7 @@ object McpTools {
         if (tool != null && !McpSettings.allowed(tool.permission)) {
             result = error("permission_denied", "Permission was revoked")
         }
-        if (name == "search_filtered" && !McpSettings.allowed("metadata")) result = error("permission_denied", "Metadata permission revoked")
+        if ((name == "search_filtered" || (name in setOf("catalog_search", "catalog_read") && args["type"]?.jsonPrimitive?.content == "song")) && !McpSettings.allowed("metadata")) result = error("permission_denied", "Metadata permission revoked")
         if (name in setOf("playlist_read", "playlist_entries", "playlist_add", "playlist_remove")) {
             val id = (args["playlist_id"] as? JsonPrimitive)?.content
             if (id != null && !McpSettings.playlistAllowed(id))
@@ -152,7 +167,18 @@ object McpTools {
             withTimeout(20_000) {
                 withContext(Dispatchers.IO) {
                     when (name) {
-                        "recommendations", "listening_summary", "sleep_timer_get", "sleep_timer_set", "sleep_timer_cancel", "downloads_list", "download_status", "download_enqueue", "download_cancel" -> McpUtilities.call(context, name, args)
+                        "catalog_search" -> {
+                            if (args["type"]?.jsonPrimitive?.content == "song") checkPermission("metadata")
+                            McpCatalog.search(context, args, catalogScope(context))
+                        }
+                        "catalog_read" -> {
+                            if (args["type"]?.jsonPrimitive?.content == "song") checkPermission("metadata")
+                            McpCatalog.read(context, args)
+                        }
+                        "playlist_rename", "playlist_delete", "playlist_batch_add", "playlist_batch_remove", "playlist_reorder" -> McpAccountPlaylists.call(context, name, args)
+                        "downloads_list", "download_status", "download_enqueue", "download_cancel", "download_delete", "playlist_download", "playlist_download_status", "playlist_download_cancel", "playlist_download_delete" -> McpDownloadTools.call(context, name, args)
+
+                        "recommendations", "listening_summary", "sleep_timer_get", "sleep_timer_set", "sleep_timer_cancel" -> McpUtilities.call(context, name, args)
                         "track_details" -> McpMetadata.details(context, args.text("video_id", 11), (args["fields"] as JsonArray).map { it.jsonPrimitive.content })
                         "search_filtered" -> {
                             checkPermission("metadata")
@@ -240,15 +266,7 @@ object McpTools {
                                 })
                             }
                         }
-                        "playlist_create" -> {
-                            withContext(Dispatchers.Main) {
-                                currentCoroutineContext().ensureActive()
-                                checkPermission(tool.permission)
-                                val p = LocalPlaylistStore.savePlaylist(args.text("title", 200), emptyList())
-                                McpSettings.grantPlaylist(p.id)
-                                buildJsonObject { put("created_id", p.id); put("requires_user_approval", false) }
-                            }
-                        }
+                        "playlist_create" -> McpAccountPlaylists.call(context, name, args)
                         "playlist_read", "playlist_entries", "playlist_add", "playlist_remove" -> {
                             val id = args.text("playlist_id", 200)
                             // Check before lookup: disallowed and nonexistent IDs are indistinguishable.
@@ -475,6 +493,11 @@ object McpTools {
             val future = MediaController.Builder(app, SessionToken(app, ComponentName(app, PlaybackService::class.java))).buildAsync()
             try { block(future.await()) } finally { MediaController.releaseFuture(future) }
         }
+
+    private fun catalogScope(context: Context): String {
+        val raw = McpSettings.token + ":" + McpPlaylistCatalog.currentScope(context).orEmpty() + ":" + McpSettings.permissions.joinToString { "$it=${McpSettings.allowed(it)}" }
+        return java.security.MessageDigest.getInstance("SHA-256").digest(raw.toByteArray()).joinToString("") { "%02x".format(it) }
+    }
 
     private fun checkPermission(permission: String) {
         if (!McpSettings.allowed(permission)) throw SecurityException("Permission revoked")
