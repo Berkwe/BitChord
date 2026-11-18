@@ -1492,4 +1492,7 @@
     <string name="mcp_sleep_timer">Uyku zamanlayıcısını yönetme</string>
     <string name="mcp_downloads_read">İndirmeleri okuma</string>
     <string name="mcp_downloads_write">İndirme başlatma</string>
+
+    <!-- MCP additions: English fallback until localized. -->
+    <string name="mcp_title" translatable="false">MCP</string>
 </resources>

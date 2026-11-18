@@ -1568,4 +1568,19 @@
     <string name="mcp_source_offline">Offline library</string>
     <string name="mcp_source_youtube">YouTube Music</string>
     <string name="mcp_source_spotify">Spotify</string>
+
+    <!-- MCP additions: English fallback until localized. -->
+    <string name="mcp_title" translatable="false">MCP</string>
+    <string name="mcp_detailed_now_playing">Detailed now playing</string>
+    <string name="mcp_detailed_now_playing_hint">Include additional song metadata in now playing responses.</string>
+    <string name="mcp_ownership_unknown">Editing eligibility checked when writing</string>
+    <string name="mcp_queue_write">Edit queue</string>
+    <string name="mcp_likes_read">Read likes</string>
+    <string name="mcp_likes_write">Edit likes</string>
+    <string name="mcp_metadata">Read song metadata</string>
+    <string name="mcp_recommendations">Read recommendations</string>
+    <string name="mcp_stats">Read listening statistics</string>
+    <string name="mcp_sleep_timer">Control sleep timer</string>
+    <string name="mcp_downloads_read">Read downloads</string>
+    <string name="mcp_downloads_write">Start downloads</string>
 </resources>
