@@ -1480,4 +1480,16 @@
     <string name="mcp_source_offline">Çevrimdışı kitaplık</string>
     <string name="mcp_source_youtube">YouTube Music</string>
     <string name="mcp_source_spotify">Spotify</string>
+    <string name="mcp_detailed_now_playing">Ayrıntılı çalan parça</string>
+    <string name="mcp_detailed_now_playing_hint">Çalan parça yanıtlarına ek parça bilgilerini dahil et.</string>
+    <string name="mcp_ownership_unknown">Düzenleme yetkisi yazma sırasında kontrol edilir</string>
+    <string name="mcp_queue_write">Sırayı düzenleme</string>
+    <string name="mcp_likes_read">Beğenileri okuma</string>
+    <string name="mcp_likes_write">Beğenileri düzenleme</string>
+    <string name="mcp_metadata">Parça bilgilerini okuma</string>
+    <string name="mcp_recommendations">Önerileri okuma</string>
+    <string name="mcp_stats">Dinleme istatistiklerini okuma</string>
+    <string name="mcp_sleep_timer">Uyku zamanlayıcısını yönetme</string>
+    <string name="mcp_downloads_read">İndirmeleri okuma</string>
+    <string name="mcp_downloads_write">İndirme başlatma</string>
 </resources>

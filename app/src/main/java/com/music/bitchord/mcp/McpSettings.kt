@@ -9,7 +9,7 @@ import java.security.SecureRandom
 object McpSettings {
     private lateinit var prefs: SharedPreferences
     /** "Edit playlists" is the switch that lets MCP add to and remove from any allowed playlist. */
-    val permissions = listOf("now_playing", "history", "queue", "playback", "seek", "search", "playlist_read", "playlist_create", "playlist_write")
+    val permissions = listOf("now_playing", "history", "queue", "playback", "seek", "search", "playlist_read", "playlist_create", "playlist_write", "queue_write", "likes_read", "likes_write", "metadata", "recommendations", "stats", "sleep_timer", "downloads_read", "downloads_write")
     @Volatile var onChanged: (() -> Unit)? = null
     val port: Int = 8765
 
@@ -22,6 +22,9 @@ object McpSettings {
     var enabled: Boolean
         get() = ::prefs.isInitialized && prefs.getBoolean("enabled", false)
         set(value) { if (enabled != value) { prefs.edit().putBoolean("enabled", value).apply(); onChanged?.invoke() } }
+    var detailedNowPlaying: Boolean
+        get() = ::prefs.isInitialized && prefs.getBoolean("detailed_now_playing", false)
+        set(value) { prefs.edit().putBoolean("detailed_now_playing", value).apply() }
     var lanEnabled: Boolean
         get() = ::prefs.isInitialized && prefs.getBoolean("lan", false)
         set(value) { if (lanEnabled != value) { prefs.edit().putBoolean("lan", value).apply(); onChanged?.invoke() } }

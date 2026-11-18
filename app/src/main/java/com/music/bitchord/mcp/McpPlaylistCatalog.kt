@@ -19,6 +19,7 @@ data class McpPlaylistEntry(
     val title: String,
     val source: String,
     val editable: Boolean,
+    val ownershipKnown: Boolean = true,
 )
 
 /** IDs bind Google account AND YouTube profile. No credentials enter IDs or results. */
@@ -72,16 +73,16 @@ object McpPlaylistCatalog {
 
     /** Settings UI discovery, not an MCP authorization bypass. Errors propagate, never silently hide remote failure. */
     private suspend fun loadYouTube(context: Context): List<McpPlaylistEntry> {
-        val scope = currentScope(context) ?: return emptyList()
+        val scope = currentScope(context) ?: run {
+            if (BitChordApplication.authStore.activeSession == null) return emptyList()
+            throw SecurityException("YouTube profile scope unavailable")
+        }
         val rows = YtMusicRepository.userPlaylists().getOrThrow() // same paged saved/own playlist feed as library
         assertScope(context, scope)
-        // Writes go to the owner's own playlists only; saved ones are read-only.
+        // Discovery must not perform N serial ownership requests within the source timeout.
+        // Unknown ownership is conservative; mutations still verify ownership freshly.
         val remote = rows.map {
-            // Subtitle text (including "Playlist") is not evidence of ownership.
-            assertScope(context, scope)
-            val owned = YtMusicRepository.playlistOwned(it.browseId).getOrThrow() == true
-            assertScope(context, scope)
-            McpPlaylistEntry("youtube:$scope:${it.browseId}", it.title, "youtube", owned)
+            McpPlaylistEntry("youtube:$scope:${it.browseId}", it.title, "youtube", false, ownershipKnown = false)
         }
         // Liked Music is excluded by userPlaylists' editable-list parser; add explicitly.
         val liked = McpPlaylistEntry("youtube:$scope:${YtMusicRepository.LIKED_MUSIC}", "Liked Music", "youtube", false)

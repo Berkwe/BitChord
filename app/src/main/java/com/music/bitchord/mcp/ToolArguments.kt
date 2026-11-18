@@ -7,8 +7,18 @@ internal fun validateToolArguments(args: JsonObject, fields: Map<String, String>
     require(args.keys.all { it in fields }) { "Unexpected argument" }
     required.forEach { require(it in args) { "Missing argument: $it" } }
     args.forEach { (key, value) ->
+        if (fields[key] == "string_array") {
+            val list = value as? JsonArray ?: throw IllegalArgumentException("$key must be an array")
+            require(list.size <= 24 && list.all { it is JsonPrimitive && it.isString && it.content.length in 1..80 }) { "Invalid $key" }
+            return@forEach
+        }
+        if (fields[key] == "object") {
+            require(value is JsonObject && value.size <= 16 && value.toString().length <= 2000) { "Invalid $key" }
+            return@forEach
+        }
         val p = value as? JsonPrimitive ?: throw IllegalArgumentException("$key has invalid type")
         when (fields[key]) {
+            "boolean" -> require(!p.isString && p.booleanOrNull != null) { "$key must be a boolean" }
             "string" -> {
                 require(p.isString) { "$key must be a string" }
                 val max = when (key) { "query" -> 300; "video_id" -> 11; else -> 200 }

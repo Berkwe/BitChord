@@ -17,6 +17,13 @@ import com.music.bitchord.download.Downloads
 import com.music.bitchord.playback.PlaybackService
 import com.music.bitchord.playback.playSongs
 import com.music.bitchord.playback.toSong
+import com.music.bitchord.playback.toMediaItem
+import com.music.bitchord.playback.toggleShuffle
+import com.music.bitchord.playback.setQueueDragActive
+import com.music.bitchord.playback.QueueCoordinator
+import com.music.bitchord.data.model.QueueTier
+import com.music.bitchord.data.model.LikeStatus
+import com.music.bitchord.data.LikeState
 import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.CancellationException
@@ -37,6 +44,19 @@ object McpTools {
     private data class Tool(val name: String, val permission: String, val description: String,
                             val fields: Map<String, String> = emptyMap(), val required: List<String> = emptyList())
     private val tools = listOf(
+        Tool("track_details", "metadata", "Select fields: video_id,title,artist,album,duration,artist_id,artists,album_id,explicit,is_video,source,genres,year,release_date,views,likes,comments,analysis,lyrics,track_number,radio_name,queue_tier,queue_entry_id,playback_source,playback_source_id,download_format. Only requested expensive fields are fetched; analysis reads existing results.", mapOf("video_id" to "string", "fields" to "string_array"), listOf("video_id", "fields")),
+        Tool("search_filtered", "search", "Search max40 candidates/max20 results. criteria: artist,title,album,explicit,is_video,duration_min,duration_max (seconds),genre,year. Video category uses API; other criteria filter locally. Unknowns excluded. Requires metadata permission.", mapOf("query" to "string", "criteria" to "object", "fields" to "string_array", "limit" to "integer"), listOf("query")),
+        Tool("skip_next", "playback", "Skip to the next queue item"),
+        Tool("skip_previous", "playback", "Skip to the previous queue item"),
+        Tool("playback_modes", "queue", "Read shuffle and repeat state"),
+        Tool("shuffle_set", "playback", "Set shuffle explicitly", mapOf("enabled" to "boolean"), listOf("enabled")),
+        Tool("repeat_set", "playback", "Set repeat: off, one or all", mapOf("mode" to "string"), listOf("mode")),
+        Tool("queue_add", "queue_write", "Add a catalogue track without replacing playback; position is next or end", mapOf("video_id" to "string", "position" to "string"), listOf("video_id")),
+        Tool("queue_remove", "queue_write", "Remove an entry only if index still matches expected_video_id", mapOf("index" to "integer", "expected_video_id" to "string"), listOf("index", "expected_video_id")),
+        Tool("queue_move", "queue_write", "Move an entry only if index still matches expected_video_id", mapOf("index" to "integer", "to_index" to "integer", "expected_video_id" to "string"), listOf("index", "to_index", "expected_video_id")),
+        Tool("rating_get", "likes_read", "Read account rating; null means unknown", mapOf("video_id" to "string"), listOf("video_id")),
+        Tool("rating_set", "likes_write", "Set account rating: like, dislike or indifferent", mapOf("video_id" to "string", "status" to "string"), listOf("video_id", "status")),
+
         Tool("now_playing", "now_playing", "Current track and playback position"),
         Tool("listening_history", "history", "Device-local persisted listening totals per track, sorted by last listened time; not a per-play event log", mapOf("limit" to "integer")),
         Tool("account_history", "history", "YouTube Music account history; deduplicated, no timestamps", mapOf("limit" to "integer")),
@@ -63,7 +83,8 @@ object McpTools {
                     put("type", "object")
                     put("additionalProperties", false)
                     putJsonObject("properties") {
-                        tool.fields.forEach { (name, type) -> putJsonObject(name) { put("type", type) } }
+                        tool.fields.forEach { (name, type) -> putJsonObject(name) { if (type == "string_array") { put("type", "array"); putJsonObject("items") { put("type", "string") }; put("maxItems", 24) }
+                            else put("type", type) } }
                     }
                     put("required", JsonArray(tool.required.map(::JsonPrimitive)))
                 }
@@ -79,6 +100,7 @@ object McpTools {
         if (tool != null && !McpSettings.allowed(tool.permission)) {
             result = error("permission_denied", "Permission was revoked")
         }
+        if (name == "search_filtered" && !McpSettings.allowed("metadata")) result = error("permission_denied", "Metadata permission revoked")
         if (name in setOf("playlist_read", "playlist_entries", "playlist_add", "playlist_remove")) {
             val id = (args["playlist_id"] as? JsonPrimitive)?.content
             if (id != null && !McpSettings.playlistAllowed(id))
@@ -121,6 +143,26 @@ object McpTools {
             withTimeout(20_000) {
                 withContext(Dispatchers.IO) {
                     when (name) {
+                        "track_details" -> McpMetadata.details(context, args.text("video_id", 11), (args["fields"] as JsonArray).map { it.jsonPrimitive.content })
+                        "search_filtered" -> {
+                            checkPermission("metadata")
+                            McpMetadata.search(context, args)
+                        }
+                        "rating_get" -> {
+                            val menu = YtMusicRepository.songMenu(args.text("video_id", 11)).getOrThrow()
+                            buildJsonObject { put("rating", menu.likeStatus?.name?.lowercase()?.let(::JsonPrimitive) ?: JsonNull) }
+                        }
+                        "rating_set" -> {
+                            val status = when (args.text("status", 20)) {
+                                "like" -> LikeStatus.LIKE; "dislike" -> LikeStatus.DISLIKE; "indifferent" -> LikeStatus.INDIFFERENT
+                                else -> throw IllegalArgumentException("Invalid rating")
+                            }
+                            val id = args.text("video_id", 11)
+                            checkPermission(tool.permission)
+                            YtMusicRepository.rate(id, status).getOrThrow()
+                            LikeState.set(id, status)
+                            ok()
+                        }
                         "search" -> {
                             val query = args.text("query", 300)
                             val limit = args.limit()
@@ -182,7 +224,7 @@ object McpTools {
                                     entries.filter { McpSettings.playlistAllowed(it.id) }.forEach { p ->
                                         add(buildJsonObject {
                                             put("id", p.id); put("title", p.title)
-                                            put("source", p.source); put("read_only", !p.editable)
+                                            put("source", p.source); put("ownership_known", p.ownershipKnown); if (p.ownershipKnown) put("read_only", !p.editable)
                                         })
                                     }
                                 })
@@ -309,14 +351,14 @@ object McpTools {
                             }
                         }
                         else -> {
-                            val song = if (name == "play" && "video_id" in args)
+                            val song = if (name in setOf("play", "queue_add") && "video_id" in args)
                                 catalogueSong(context, args.text("video_id", 11)) else null
                             controller(context) { c ->
                                 currentCoroutineContext().ensureActive()
                                 checkPermission(tool.permission)
                                 when (name) {
                                     "now_playing" -> buildJsonObject {
-                                        put("track", c.currentMediaItem?.toSong()?.let(::songJson) ?: JsonNull)
+                                        put("track", c.currentMediaItem?.toSong()?.let { if (McpSettings.detailedNowPlaying) McpMetadata.summary(it) else McpMetadata.basic(it) } ?: JsonNull)
                                         put("is_playing", c.isPlaying); put("position_ms", c.currentPosition)
                                         put("duration_ms", if (c.duration == C.TIME_UNSET) JsonNull else JsonPrimitive(c.duration))
                                     }
@@ -330,6 +372,32 @@ object McpTools {
                                                 put("track", songJson(c.getMediaItemAt(i).toSong()))
                                             })
                                         })
+                                    }
+                                    "skip_next" -> { check(c.hasNextMediaItem()) { "No next item" }; c.seekToNextMediaItem(); ok() }
+                                    "skip_previous" -> { check(c.hasPreviousMediaItem()) { "No previous item" }; c.seekToPreviousMediaItem(); ok() }
+                                    "playback_modes" -> buildJsonObject { put("shuffle", c.shuffleModeEnabled); put("repeat", when(c.repeatMode) { Player.REPEAT_MODE_ONE -> "one"; Player.REPEAT_MODE_ALL -> "all"; else -> "off" }) }
+                                    "shuffle_set" -> { if (c.shuffleModeEnabled != args.getValue("enabled").jsonPrimitive.boolean) c.toggleShuffle(); ok() }
+                                    "repeat_set" -> {
+                                        c.repeatMode = when(args.text("mode", 10)) { "off" -> Player.REPEAT_MODE_OFF; "one" -> Player.REPEAT_MODE_ONE; "all" -> Player.REPEAT_MODE_ALL; else -> throw IllegalArgumentException("Invalid repeat mode") }; ok()
+                                    }
+                                    "queue_add" -> {
+                                        val position = args["position"]?.jsonPrimitive?.content ?: "end"
+                                        require(position in setOf("next", "end")) { "position must be next or end" }
+                                        val entry = QueueCoordinator.run { requireNotNull(song).asQueueEntry(QueueTier.USER_QUEUE) }
+                                        val at = if (position == "next") (c.currentMediaItemIndex + 1).coerceIn(0, c.mediaItemCount) else QueueCoordinator.findUserQueueInsertionIndex((0 until c.mediaItemCount).map { c.getMediaItemAt(it).toSong() }, c.currentMediaItemIndex, false)
+                                        c.addMediaItem(at, entry.toMediaItem()); ok()
+                                    }
+                                    "queue_remove", "queue_move" -> {
+                                        val index = args.integer("index")
+                                        require(index in 0 until c.mediaItemCount) { "Queue index outside range" }
+                                        check(c.getMediaItemAt(index).mediaId == args.text("expected_video_id", 200)) { "Queue changed; read it again" }
+                                        c.setQueueDragActive(true)
+                                        try {
+                                            if (name == "queue_remove") c.removeMediaItem(index) else {
+                                                val to = args.integer("to_index"); require(to in 0 until c.mediaItemCount) { "Destination outside range" }; c.moveMediaItem(index, to)
+                                            }
+                                        } finally { c.setQueueDragActive(false) }
+                                        ok()
                                     }
                                     "pause" -> { c.pause(); ok() }
                                     "play", "resume" -> {
@@ -453,12 +521,8 @@ object McpTools {
     private fun JsonObject.offset(): Int = if ("offset" in this) integer("offset").also {
         require(it >= 0) { "offset must be nonnegative" }
     } else 0
-    private fun songJson(song: Song): JsonObject = buildJsonObject {
-        put("video_id", song.videoId); put("title", song.title); put("artist", song.artist)
-        song.albumName?.let { put("album", it) }
-        song.durationText?.let { put("duration", it) }
-        // No localUri, localPath, artwork URL, cookies or stream resolver output.
-    }
+    private fun songJson(song: Song): JsonObject = McpMetadata.summary(song)
+
     private fun songsJson(songs: List<Song>): JsonArray = JsonArray(songs.map(::songJson))
     private fun ok(): JsonObject = buildJsonObject { put("ok", true); put("status", "command_sent") }
     private fun error(code: String, message: String): JsonObject = buildJsonObject {

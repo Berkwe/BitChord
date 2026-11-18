@@ -94,6 +94,7 @@ fun McpSettingsPanel() {
     }
     // Invalidate only preference snapshots, never the UI subtree or text-field focus.
     val enabled = remember(revision) { McpSettings.enabled }
+    val detailedNowPlaying = remember(revision) { McpSettings.detailedNowPlaying }
     val lanEnabled = remember(revision) { McpSettings.lanEnabled }
     val token = remember(revision) { McpSettings.token }
     val blocklist = remember(revision) { McpSettings.playlistMode == "blocklist" }
@@ -152,6 +153,12 @@ fun McpSettingsPanel() {
                 RowDivider()
                 SettingsRow(title = stringResource(R.string.mcp_rotate_token), onClick = { rotate = true })
             }
+            SettingsGroup {
+                McpToggle(stringResource(R.string.mcp_detailed_now_playing), detailedNowPlaying,
+                    subtitle = stringResource(R.string.mcp_detailed_now_playing_hint)) {
+                    McpSettings.detailedNowPlaying = it; revision++
+                }
+            }
             SettingsGroup(header = stringResource(R.string.mcp_permissions)) {
                 McpSettings.permissions.forEachIndexed { index, permission ->
                     if (index > 0) RowDivider()
@@ -164,6 +171,15 @@ fun McpSettingsPanel() {
                         "search" -> R.string.mcp_search
                         "playlist_read" -> R.string.mcp_playlist_read
                         "playlist_create" -> R.string.mcp_playlist_create
+                        "queue_write" -> R.string.mcp_queue_write
+                        "likes_read" -> R.string.mcp_likes_read
+                        "likes_write" -> R.string.mcp_likes_write
+                        "metadata" -> R.string.mcp_metadata
+                        "recommendations" -> R.string.mcp_recommendations
+                        "stats" -> R.string.mcp_stats
+                        "sleep_timer" -> R.string.mcp_sleep_timer
+                        "downloads_read" -> R.string.mcp_downloads_read
+                        "downloads_write" -> R.string.mcp_downloads_write
                         else -> R.string.mcp_playlist_write
                     }
                     McpToggle(stringResource(label), permissions[permission] == true) {
@@ -276,7 +292,9 @@ fun McpSettingsPanel() {
                         "spotify" -> stringResource(R.string.mcp_source_spotify)
                         else -> playlist.source
                     }
-                    val playlistSubtitle = if (!playlist.editable) {
+                    val playlistSubtitle = if (!playlist.ownershipKnown) {
+                        "$sourceLabel · ${stringResource(R.string.mcp_ownership_unknown)}"
+                    } else if (!playlist.editable) {
                         "$sourceLabel · ${stringResource(R.string.mcp_read_only)}"
                     } else sourceLabel
                     McpToggle(playlist.title, playlist.id in selection.selectedIds, subtitle = playlistSubtitle) {

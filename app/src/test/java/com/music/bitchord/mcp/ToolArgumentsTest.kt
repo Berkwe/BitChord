@@ -22,4 +22,15 @@ class ToolArgumentsTest {
         try { validateToolArguments(JsonObject(emptyMap()), mapOf("query" to "string"), listOf("query")); fail() }
         catch (_: IllegalArgumentException) { }
     }
+    @Test fun acceptsBoundedFieldSelectionAndBoolean() {
+        validateToolArguments(Json.parseToJsonElement("""{"fields":["title","analysis"],"enabled":true,"criteria":{"explicit":false}}""").jsonObject,
+            mapOf("fields" to "string_array", "enabled" to "boolean", "criteria" to "object"), emptyList())
+    }
+    @Test fun rejectsInvalidSelectionsAndBooleans() {
+        val schema = mapOf("fields" to "string_array", "enabled" to "boolean", "criteria" to "object")
+        listOf("""{"fields":[1]}""", """{"fields":"title"}""", """{"enabled":"true"}""", """{"criteria":[]}""").forEach {
+            try { validateToolArguments(Json.parseToJsonElement(it).jsonObject, schema, emptyList()); fail("accepted $it") }
+            catch (_: IllegalArgumentException) { }
+        }
+    }
 }
