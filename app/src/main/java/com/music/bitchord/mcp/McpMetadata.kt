@@ -8,7 +8,8 @@ import com.music.bitchord.data.model.*
 import com.music.bitchord.data.lyrics.LyricsRepository
 import com.music.bitchord.data.settings.AppSettings
 import com.music.bitchord.data.stats.ArtistFacts
-import com.music.bitchord.playback.smart.TrackAnalyzer
+import com.music.bitchord.playback.smart.AnalysisStore
+import com.music.bitchord.playback.smart.TrackAnalysis
 import kotlinx.coroutines.*
 import kotlinx.coroutines.sync.Semaphore
 import kotlinx.coroutines.sync.withPermit
@@ -59,14 +60,14 @@ object McpMetadata {
         require(Regex("[A-Za-z0-9_-]{11}").matches(id)) { "Invalid video_id" }
         return withTimeoutOrNull(11_000) {
             val song = withTimeoutOrNull(3_000) { cached("track:$id") { YtMusicRepository.trackLinks(id).getOrThrow() } } ?: return@withTimeoutOrNull null
-            project(song, selected)
+            project(context, song, selected)
         } ?: buildJsonObject {
             selected.forEach { put(it, JsonNull) }
             put("status", "partial")
         }
     }
     private suspend fun info(song: Song): SongInfo = cached("info:${song.videoId}") { SongInfoRepository.load(song) }
-    private suspend fun project(song: Song, fields: Set<String>): JsonObject {
+    private suspend fun project(context: Context, song: Song, fields: Set<String>): JsonObject {
         val values = summary(song).toMutableMap()
         song.trackNumber?.let { values["track_number"] = JsonPrimitive(it) }
         song.radioName?.let { values["radio_name"] = JsonPrimitive(it) }
@@ -83,7 +84,7 @@ object McpMetadata {
             i.comments?.let { values["comments"] = JsonPrimitive(it) }
         }
         if ("analysis" in fields) {
-            val a = TrackAnalyzer.analysisFor(song.videoId)
+            val a = AnalysisStore { context.filesDir }.load(song.videoId) ?: TrackAnalysis(trackId = song.videoId)
             values["analysis"] = buildJsonObject {
                 put("status", a.status.ifBlank { "unknown" })
                 if (a.bpm.isFinite() && a.bpm > 0) { put("bpm", a.bpm); put("beat_confidence", a.beatConfidence) }
@@ -142,10 +143,10 @@ object McpMetadata {
         else -> null
     }
     suspend fun search(context: Context, args: JsonObject): JsonObject =
-        withTimeoutOrNull(11_000) { searchWithinBudget(args) } ?: buildJsonObject {
+        withTimeoutOrNull(11_000) { searchWithinBudget(context, args) } ?: buildJsonObject {
             put("results", JsonArray(emptyList())); put("status", "partial"); put("reason", "time_budget")
         }
-    private suspend fun searchWithinBudget(args: JsonObject): JsonObject {
+    private suspend fun searchWithinBudget(context: Context, args: JsonObject): JsonObject {
         val query = (args["query"] as? JsonPrimitive)?.contentOrNull.orEmpty().trim()
         require(query.isNotEmpty() && query.length <= 300) { "Invalid query" }
         val criteria = args["criteria"]?.let { it as? JsonObject ?: error("criteria must be an object") } ?: buildJsonObject { }
@@ -177,7 +178,7 @@ object McpMetadata {
             matches += song
             if (matches.size >= limit) break
         }
-        val results = matches.take(limit).map { project(it, fields) }
+        val results = matches.take(limit).map { project(context, it, fields) }
         return buildJsonObject {
             put("results", JsonArray(results)); put("scanned", candidates.size); put("candidate_limit", 40)
             put("result_limit", limit); put("year_enriched", enriched); put("exhaustive", false)
